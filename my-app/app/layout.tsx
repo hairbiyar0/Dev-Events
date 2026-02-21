@@ -1,8 +1,9 @@
 import type { Metadata } from "next";
 import { Schibsted_Grotesk, Martian_Mono } from "next/font/google";
 import "./globals.css";
-import LightRays from "@/component/LightRays";
-import Navbar from "@/component/Navbar";
+import LightRays from "@/components/LightRays";
+import Navbar from "@/components/Navbar";
+import { ToastProvider } from "@/components/Toast";
 
 const schibstedGrotesk = Schibsted_Grotesk({
     variable: "--font-schibsted-grotesk",
@@ -27,8 +28,9 @@ export default function RootLayout({
     return (
         <html lang="en">
         <body className={`${schibstedGrotesk.variable} min-h-screen ${martianMono.variable}`}>
+        <ToastProvider>
+        <Navbar/>
         <div className="absolute inset-0 top-0 z-[-1] min-h-screen">
-            <Navbar/>
             <LightRays
                 raysOrigin="top-center-offset"
                 raysColor="#5dfeca"
@@ -44,6 +46,7 @@ export default function RootLayout({
         <main>
         {children}
         </main>
+        </ToastProvider>
         </body>
         </html>
     );
