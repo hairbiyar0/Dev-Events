@@ -86,10 +86,16 @@ export async function GET() {
         // Connect to database
         await connectDB();
 
-        // Fetch events
-        const events = await Event.find().sort({ createdAt: -1 });
+        // Fetch events with lean() for better performance and to return plain objects
+        const events = await Event.find().sort({ createdAt: -1 }).lean().exec();
 
-        return NextResponse.json({ message: 'Events fetched successfully', events }, { status: 200 });
+        // Ensure we always return an array
+        const eventsArray = Array.isArray(events) ? events : [];
+
+        return NextResponse.json({ 
+            message: 'Events fetched successfully', 
+            events: eventsArray 
+        }, { status: 200 });
     } catch (e) {
         console.error('GET /api/events error:', e);
         const errorMessage = e instanceof Error ? e.message : 'Unknown error';
@@ -99,7 +105,8 @@ export async function GET() {
         
         return NextResponse.json({ 
             message: 'Event fetching failed', 
-            error: errorDetails 
+            error: errorDetails,
+            events: [] // Always return empty array on error
         }, { status: 500 });
     }
 }

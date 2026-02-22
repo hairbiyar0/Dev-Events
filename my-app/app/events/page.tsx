@@ -30,10 +30,25 @@ const EventsPage = () => {
   const fetchEvents = async () => {
     try {
       const res = await fetch(`${BASE_URL}/api/events`);
+      
+      if (!res.ok) {
+        const errorData = await res.json().catch(() => ({ message: 'Failed to fetch events' }));
+        console.error('API Error:', errorData);
+        showToast(errorData.message || "Failed to load events.", "error");
+        setEvents([]);
+        return;
+      }
+      
       const data = await res.json();
-      setEvents(data.events ?? []);
-    } catch {
-      showToast("Failed to load events.", "error");
+      console.log('Events data:', data); // Debug log
+      
+      // Handle both response formats: { events: [...] } or just [...]
+      const eventsList = data.events || data || [];
+      setEvents(Array.isArray(eventsList) ? eventsList : []);
+    } catch (error) {
+      console.error('Fetch error:', error);
+      showToast("Failed to load events. Please check your connection.", "error");
+      setEvents([]);
     } finally {
       setLoading(false);
     }
