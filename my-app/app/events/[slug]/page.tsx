@@ -3,9 +3,8 @@ import Link from "next/link";
 import { notFound } from "next/navigation";
 import { IEvent } from "@/database";
 import BookEvent from "./BookEvent";
-
-// Use relative URL for API calls (works in both dev and production)
-const BASE_URL = process.env.NEXT_PUBLIC_BASE_URL || '';
+import connectDB from "@/lib/mongodb";
+import Event from "@/database/models/event.model";
 
 interface PageProps {
   params: Promise<{ slug: string }>;
@@ -14,15 +13,16 @@ interface PageProps {
 const EventDetails = async ({ params }: PageProps) => {
   const { slug } = await params;
 
-  const res = await fetch(`${BASE_URL}/api/events/${slug}`, {
-    cache: "no-store",
-  });
+  try {
+    // Connect to database and fetch event directly (server component best practice)
+    await connectDB();
+    const event = await Event.findOne({ slug }).lean().exec();
 
-  if (!res.ok) return notFound();
+    if (!event) {
+      return notFound();
+    }
 
-  const { event }: { event: IEvent } = await res.json();
-
-  return (
+    return (
     <section id="event">
       {/* Header */}
       <div className="header">
@@ -116,6 +116,10 @@ const EventDetails = async ({ params }: PageProps) => {
       </div>
     </section>
   );
+  } catch (error) {
+    console.error('Error fetching event:', error);
+    return notFound();
+  }
 };
 
 export default EventDetails;

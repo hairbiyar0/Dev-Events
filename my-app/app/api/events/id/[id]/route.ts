@@ -31,9 +31,11 @@ export async function GET(_req: NextRequest, context: RouteContext) {
       { message: "Event fetched successfully", event },
       { status: 200 },
     );
-  } catch {
+  } catch (e) {
+    console.error('GET /api/events/id/[id] error:', e);
+    const errorMessage = e instanceof Error ? e.message : 'Unknown error';
     return NextResponse.json(
-      { message: "Failed to fetch event." },
+      { message: "Failed to fetch event.", error: errorMessage },
       { status: 500 },
     );
   }

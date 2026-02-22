@@ -57,9 +57,11 @@ export async function GET(_req: NextRequest, context: RouteContext) {
     }
 
     return NextResponse.json({ message: "Event fetched successfully", event }, { status: 200 });
-  } catch {
+  } catch (e) {
+    console.error('GET /api/events/[slug] error:', e);
+    const errorMessage = e instanceof Error ? e.message : 'Unknown error';
     return NextResponse.json(
-      { message: "Unexpected error while fetching event.", code: "INTERNAL_SERVER_ERROR" } satisfies ErrorResponse,
+      { message: "Unexpected error while fetching event.", code: "INTERNAL_SERVER_ERROR", error: errorMessage } satisfies ErrorResponse,
       { status: 500 },
     );
   }
