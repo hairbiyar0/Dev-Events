@@ -4,7 +4,8 @@ import { FormEvent, useState } from "react";
 import { useRouter } from "next/navigation";
 import { useToast } from "@/components/Toast";
 
-const BASE_URL = process.env.NEXT_PUBLIC_BASE_URL;
+// Use relative URL for API calls (works in both dev and production)
+const BASE_URL = process.env.NEXT_PUBLIC_BASE_URL || '';
 
 const CreateEventPage = () => {
   const router = useRouter();

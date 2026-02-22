@@ -5,7 +5,8 @@ import Image from "next/image";
 import { useRouter } from "next/navigation";
 import { useToast } from "@/components/Toast";
 
-const BASE_URL = process.env.NEXT_PUBLIC_BASE_URL;
+// Use relative URL for API calls (works in both dev and production)
+const BASE_URL = process.env.NEXT_PUBLIC_BASE_URL || '';
 
 interface EventData {
   _id: string;

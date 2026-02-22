@@ -2,7 +2,8 @@
 
 import { FormEvent, useState } from "react";
 
-const BASE_URL = process.env.NEXT_PUBLIC_BASE_URL;
+// Use relative URL for API calls (works in both dev and production)
+const BASE_URL = process.env.NEXT_PUBLIC_BASE_URL || '';
 
 interface BookEventProps {
   eventId: string;

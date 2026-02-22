@@ -4,7 +4,8 @@ import { notFound } from "next/navigation";
 import { IEvent } from "@/database";
 import BookEvent from "./BookEvent";
 
-const BASE_URL = process.env.NEXT_PUBLIC_BASE_URL;
+// Use relative URL for API calls (works in both dev and production)
+const BASE_URL = process.env.NEXT_PUBLIC_BASE_URL || '';
 
 interface PageProps {
   params: Promise<{ slug: string }>;

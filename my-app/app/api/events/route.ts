@@ -12,6 +12,7 @@ cloudinary.config({
 
 export async function POST(req: NextRequest) {
     try {
+        // Connect to database first
         await connectDB();
         
         const formData = await req.formData();
@@ -82,12 +83,23 @@ export async function POST(req: NextRequest) {
 
 export async function GET() {
     try {
+        // Connect to database
         await connectDB();
 
+        // Fetch events
         const events = await Event.find().sort({ createdAt: -1 });
 
         return NextResponse.json({ message: 'Events fetched successfully', events }, { status: 200 });
     } catch (e) {
-        return NextResponse.json({ message: 'Event fetching failed', error: e }, { status: 500 });
+        console.error('GET /api/events error:', e);
+        const errorMessage = e instanceof Error ? e.message : 'Unknown error';
+        const errorDetails = e instanceof Error && e.message.includes('MONGODB_URI') 
+            ? 'Database connection string not configured. Please set MONGODB_URI environment variable.'
+            : errorMessage;
+        
+        return NextResponse.json({ 
+            message: 'Event fetching failed', 
+            error: errorDetails 
+        }, { status: 500 });
     }
 }
