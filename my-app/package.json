@@ -13,6 +13,7 @@
     "cloudinary": "^2.9.0",
     "clsx": "^2.1.1",
     "lucide-react": "^0.563.0",
+    "mongoose": "^9.2.1",
     "next": "16.1.6",
     "next-cloudinary": "^6.17.5",
     "ogl": "^1.0.11",
