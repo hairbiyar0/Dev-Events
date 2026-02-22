@@ -1,14 +1,20 @@
 import ExploreBtn from "@/components/ExploreBtn";
 import EventCard from "@/components/EventCard";
-import {events} from "@/lib/constant"
 import {IEvent} from "@/database";
 import { Key } from "react";
+import connectDB from "@/lib/mongodb";
+import Event from "@/database/models/event.model";
 
-const BASE_URL = process.env.NEXT_PUBLIC_BASE_URL;
 const Page = async () => {
+    try {
+        await connectDB();
+    } catch (error) {
+        console.error('Database connection error:', error);
+        throw error;
+    }
+    
+    const events = await Event.find().sort({ createdAt: -1 }).lean();
 
-    const response = await fetch(`${BASE_URL}/api/events`, {});
-    const {events} = await response.json();
     return (
         <section>
             <h1 className="text-center">The Hub for Every Dev <br/>Event You Can&#39;t Miss</h1>
@@ -21,8 +27,7 @@ const Page = async () => {
                 <ul className="events">
                     {events.map((event: IEvent, index: Key | null | undefined) => (
                         <li key={index} className="list-none">
-                            <EventCard title={event.title} image={event.image} slug={event.slug} location={event.location} date={event.date}
-                                       time={event.time} />
+                            <EventCard title={event.title} image={event.image} slug={event.slug} location={event.location} date={event.date} time={event.time} />
                         </li>
                     ))}
                 </ul>
@@ -31,4 +36,4 @@ const Page = async () => {
     )
 }
 
-export default Page
+export default Page;

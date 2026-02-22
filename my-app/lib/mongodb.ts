@@ -28,8 +28,8 @@ if (!global.mongoose) {
  * @returns Promise resolving to the Mongoose instance
  */
 async function connectDB(): Promise<typeof mongoose> {
-    // Return existing connection if available
-    if (cached.conn) {
+    // Return existing connection if available and ready
+    if (cached.conn && mongoose.connection.readyState === 1) {
         return cached.conn;
     }
 
@@ -43,6 +43,9 @@ async function connectDB(): Promise<typeof mongoose> {
         }
         const options = {
             bufferCommands: false, // Disable Mongoose buffering
+            maxPoolSize: 10,
+            serverSelectionTimeoutMS: 5000,
+            socketTimeoutMS: 45000,
         };
 
         // Create a new connection promise
@@ -54,9 +57,15 @@ async function connectDB(): Promise<typeof mongoose> {
     try {
         // Wait for the connection to establish
         cached.conn = await cached.promise;
+        
+        // Verify connection is ready
+        if (mongoose.connection.readyState !== 1) {
+            throw new Error('MongoDB connection is not ready');
+        }
     } catch (error) {
         // Reset promise on error to allow retry
         cached.promise = null;
+        cached.conn = null;
         throw error;
     }
 
