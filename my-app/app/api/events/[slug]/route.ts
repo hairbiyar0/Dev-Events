@@ -1,175 +1,297 @@
-import { NextRequest, NextResponse } from "next/server";
-import { v2 as cloudinary } from "cloudinary";
-import { isValidObjectId } from "mongoose";
-import connectDB from "@/lib/mongodb";
-import Event, { IEvent } from "@/database/models/event.model";
+import { NextRequest, NextResponse } from 'next/server';
 
-// Cloudinary config
-cloudinary.config({
-  cloud_name: process.env.CLOUDINARY_CLOUD_NAME,
-  api_key: process.env.CLOUDINARY_API_KEY,
-  api_secret: process.env.CLOUDINARY_API_SECRET,
-});
+import connectDB from '@/lib/mongodb';
+import {Event} from "@/database";
+import { ObjectId } from 'mongodb';
+import cloudinary from '@/lib/cloudinary';
 
-// Plain-object version of IEvent returned by .lean()
-type LeanEvent = Omit<IEvent, keyof Document>;
+// Define route params type for type safety
+type RouteParams = {
+    params: Promise<{
+        slug: string;
+    }>;
+};
 
-type ErrorCode = "INVALID_SLUG" | "INVALID_ID" | "EVENT_NOT_FOUND" | "INTERNAL_SERVER_ERROR";
-interface ErrorResponse {
-  message: string;
-  code: ErrorCode;
+/**
+ * GET /api/events/[slug]
+ * Fetches a single events by its slug
+ */
+export async function GET(
+    req: NextRequest,
+    { params }: RouteParams
+): Promise<NextResponse> {
+    try {
+        // Connect to database
+        await connectDB();
+
+        // Await and extract slug from params
+        const { slug } = await params;
+
+        // Validate slug parameter
+        if (!slug || typeof slug !== 'string' || slug.trim() === '') {
+            return NextResponse.json(
+                { message: 'Invalid or missing parameter' },
+                { status: 400 }
+            );
+        }
+
+        // Sanitize slug (remove any potential malicious input)
+        const sanitizedSlug = slug.trim().toLowerCase();
+
+        // Query events by slug or ID
+        let event;
+        if (ObjectId.isValid(sanitizedSlug)) {
+            // If it's a valid ObjectId, search by ID
+            event = await Event.findById(sanitizedSlug).lean();
+        } else {
+            // Otherwise, search by slug
+            event = await Event.findOne({ slug: sanitizedSlug }).lean();
+        }
+
+        // Handle events not found
+        if (!event) {
+            return NextResponse.json(
+                { message: `Event with slug '${sanitizedSlug}' not found` },
+                { status: 404 }
+            );
+        }
+
+        // Return successful response with events data
+        return NextResponse.json(
+            { message: 'Event fetched successfully', event },
+            { status: 200 }
+        );
+    } catch (error) {
+        // Log error for debugging (only in development)
+        if (process.env.NODE_ENV === 'development') {
+            console.error('Error fetching events by slug:', error);
+        }
+
+        // Handle specific error types
+        if (error instanceof Error) {
+            // Handle database connection errors
+            if (error.message.includes('MONGODB_URI')) {
+                return NextResponse.json(
+                    { message: 'Database configuration error' },
+                    { status: 500 }
+                );
+            }
+
+            // Return generic error with error message
+            return NextResponse.json(
+                { message: 'Failed to fetch events', error: error.message },
+                { status: 500 }
+            );
+        }
+
+        // Handle unknown errors
+        return NextResponse.json(
+            { message: 'An unexpected error occurred' },
+            { status: 500 }
+        );
+    }
 }
 
-// Validate slug format
-const isValidSlug = (value: string): boolean => /^[a-z0-9]+(?:-[a-z0-9]+)*$/.test(value);
+/**
+ * PUT /api/events/[slug]
+ * Updates an event by its ID (slug parameter is used as ID)
+ */
+export async function PUT(
+    req: NextRequest,
+    { params }: RouteParams
+): Promise<NextResponse> {
+    try {
+        // Connect to database
+        await connectDB();
 
-type RouteContext = { params: Promise<{ slug: string }> };
+        // Await and extract slug from params (used as ID)
+        const { slug } = await params;
 
-// ─── GET by slug ───────────────────────────────────────────────
-export async function GET(_req: NextRequest, context: RouteContext) {
-  try {
-    const { slug: rawSlug } = await context.params;
+        // Validate slug parameter
+        if (!slug || typeof slug !== 'string' || slug.trim() === '') {
+            return NextResponse.json(
+                { message: 'Invalid or missing ID parameter' },
+                { status: 400 }
+            );
+        }
 
-    if (!rawSlug || typeof rawSlug !== "string") {
-      return NextResponse.json(
-        { message: "Slug is required.", code: "INVALID_SLUG" } satisfies ErrorResponse,
-        { status: 400 },
-      );
-    }
+        // Check if the slug is a valid ObjectId
+        if (!ObjectId.isValid(slug)) {
+            return NextResponse.json(
+                { message: 'Invalid event ID format' },
+                { status: 400 }
+            );
+        }
 
-    const slug = rawSlug.trim().toLowerCase();
+        const formData = await req.formData();
 
-    if (!isValidSlug(slug)) {
-      return NextResponse.json(
-        { message: "Slug format is invalid.", code: "INVALID_SLUG" } satisfies ErrorResponse,
-        { status: 400 },
-      );
-    }
+        let event;
+        try {
+            event = Object.fromEntries(formData.entries());
+        } catch (e) {
+            return NextResponse.json({ message: 'Invalid form data format' }, { status: 400 });
+        }
 
-    await connectDB();
-    const event = (await Event.findOne({ slug }).lean().exec()) as LeanEvent | null;
+        // Handle image upload if new image is provided
+        const file = formData.get('image') as File;
+        if (file && file.size > 0) {
+            const arrayBuffer = await file.arrayBuffer();
+            const buffer = Buffer.from(arrayBuffer);
 
-    if (!event) {
-      return NextResponse.json(
-        { message: "Event not found.", code: "EVENT_NOT_FOUND" } satisfies ErrorResponse,
-        { status: 404 },
-      );
-    }
+            const uploadResult = await new Promise((resolve, reject) => {
+                cloudinary.uploader.upload_stream(
+                    { resource_type: 'image', folder: 'DevEvent' },
+                    (error, results) => {
+                        if (error) return reject(error);
+                        resolve(results);
+                    }
+                ).end(buffer);
+            });
 
-    return NextResponse.json({ message: "Event fetched successfully", event }, { status: 200 });
-  } catch (e) {
-    console.error('GET /api/events/[slug] error:', e);
-    const errorMessage = e instanceof Error ? e.message : 'Unknown error';
-    return NextResponse.json(
-      { message: "Unexpected error while fetching event.", code: "INTERNAL_SERVER_ERROR", error: errorMessage } satisfies ErrorResponse,
-      { status: 500 },
-    );
-  }
-}
+            event.image = (uploadResult as { secure_url: string }).secure_url;
+        } else {
+            // Remove image from form data if no new file was uploaded
+            delete event.image;
+        }
 
-// ─── PUT — update event by _id ─────────────────────────────────
-export async function PUT(req: NextRequest, context: RouteContext) {
-  try {
-    const { slug: id } = await context.params;
+        // Extract tags and agenda from form data (they are sent as multiple entries)
+        const tags = formData.getAll('tags') as string[];
+        const agenda = formData.getAll('agenda') as string[];
 
-    if (!id || !isValidObjectId(id)) {
-      return NextResponse.json(
-        { message: "Valid event ID is required.", code: "INVALID_ID" } satisfies ErrorResponse,
-        { status: 400 },
-      );
-    }
+        // Remove tags, agenda, and image from the event data to avoid conflicts
+        delete event.tags;
+        delete event.agenda;
+        delete event.image;
 
-    await connectDB();
-
-    const formData = await req.formData();
-    const updates: Record<string, unknown> = {};
-
-    formData.forEach((value, key) => {
-      if (key !== "image") updates[key] = value;
-    });
-
-    // Handle optional image re-upload
-    const file = formData.get("image") as File | null;
-    if (file && file.size > 0) {
-      const arrayBuffer = await file.arrayBuffer();
-      const buffer = Buffer.from(arrayBuffer);
-
-      const uploadResult = await new Promise<{ secure_url: string }>((resolve, reject) => {
-        cloudinary.uploader
-          .upload_stream(
-            { resource_type: "image", folder: "devEvent" },
-            (error, result) => {
-              if (error) reject(error);
-              else resolve(result as { secure_url: string });
+        // Find and update the event
+        const updatedEvent = await Event.findByIdAndUpdate(
+            slug.trim(),
+            {
+                ...event,
+                tags: tags,
+                agenda: agenda,
             },
-          )
-          .end(buffer);
-      });
+            { new: true, runValidators: true }
+        );
 
-      updates.image = uploadResult.secure_url;
+        // Handle event not found
+        if (!updatedEvent) {
+            return NextResponse.json(
+                { message: `Event with ID '${slug}' not found` },
+                { status: 404 }
+            );
+        }
+
+        // Return successful response
+        return NextResponse.json(
+            { message: 'Event updated successfully', event: updatedEvent },
+            { status: 200 }
+        );
+    } catch (error) {
+        // Log error for debugging (only in development)
+        if (process.env.NODE_ENV === 'development') {
+            console.error('Error updating event:', error);
+        }
+
+        // Handle specific error types
+        if (error instanceof Error) {
+            // Handle database connection errors
+            if (error.message.includes('MONGODB_URI')) {
+                return NextResponse.json(
+                    { message: 'Database configuration error' },
+                    { status: 500 }
+                );
+            }
+
+            // Return generic error with error message
+            return NextResponse.json(
+                { message: 'Failed to update event', error: error.message },
+                { status: 500 }
+            );
+        }
+
+        // Handle unknown errors
+        return NextResponse.json(
+            { message: 'An unexpected error occurred' },
+            { status: 500 }
+        );
     }
-
-    // Normalize mode
-    if (updates.mode && typeof updates.mode === "string") {
-      const modeValue = updates.mode.toLowerCase();
-      if (modeValue.includes("hybrid")) updates.mode = "hybrid";
-      else if (modeValue.includes("online")) updates.mode = "online";
-      else if (modeValue.includes("offline")) updates.mode = "offline";
-    }
-
-    const updated = await Event.findByIdAndUpdate(id, updates, {
-      new: true,
-      runValidators: true,
-    });
-
-    if (!updated) {
-      return NextResponse.json(
-        { message: "Event not found.", code: "EVENT_NOT_FOUND" } satisfies ErrorResponse,
-        { status: 404 },
-      );
-    }
-
-    return NextResponse.json(
-      { message: "Event updated successfully", event: updated },
-      { status: 200 },
-    );
-  } catch (e) {
-    console.error(e);
-    return NextResponse.json(
-      { message: "Event update failed.", code: "INTERNAL_SERVER_ERROR" } satisfies ErrorResponse,
-      { status: 500 },
-    );
-  }
 }
 
-// ─── DELETE — remove event by _id ──────────────────────────────
-export async function DELETE(_req: NextRequest, context: RouteContext) {
-  try {
-    const { slug: id } = await context.params;
+/**
+ * DELETE /api/events/[slug]
+ * Deletes an event by its ID (slug parameter is used as ID)
+ */
+export async function DELETE(
+    req: NextRequest,
+    { params }: RouteParams
+): Promise<NextResponse> {
+    try {
+        // Connect to database
+        await connectDB();
 
-    if (!id || !isValidObjectId(id)) {
-      return NextResponse.json(
-        { message: "Valid event ID is required.", code: "INVALID_ID" } satisfies ErrorResponse,
-        { status: 400 },
-      );
+        // Await and extract slug from params (used as ID)
+        const { slug } = await params;
+
+        // Validate slug parameter
+        if (!slug || typeof slug !== 'string' || slug.trim() === '') {
+            return NextResponse.json(
+                { message: 'Invalid or missing ID parameter' },
+                { status: 400 }
+            );
+        }
+
+        // Check if the slug is a valid ObjectId
+        if (!ObjectId.isValid(slug)) {
+            return NextResponse.json(
+                { message: 'Invalid event ID format' },
+                { status: 400 }
+            );
+        }
+
+        // Find and delete the event by ID
+        const deletedEvent = await Event.findByIdAndDelete(slug.trim());
+
+        // Handle event not found
+        if (!deletedEvent) {
+            return NextResponse.json(
+                { message: `Event with ID '${slug}' not found` },
+                { status: 404 }
+            );
+        }
+
+        // Return successful response
+        return NextResponse.json(
+            { message: 'Event deleted successfully' },
+            { status: 200 }
+        );
+    } catch (error) {
+        // Log error for debugging (only in development)
+        if (process.env.NODE_ENV === 'development') {
+            console.error('Error deleting event:', error);
+        }
+
+        // Handle specific error types
+        if (error instanceof Error) {
+            // Handle database connection errors
+            if (error.message.includes('MONGODB_URI')) {
+                return NextResponse.json(
+                    { message: 'Database configuration error' },
+                    { status: 500 }
+                );
+            }
+
+            // Return generic error with error message
+            return NextResponse.json(
+                { message: 'Failed to delete event', error: error.message },
+                { status: 500 }
+            );
+        }
+
+        // Handle unknown errors
+        return NextResponse.json(
+            { message: 'An unexpected error occurred' },
+            { status: 500 }
+        );
     }
-
-    await connectDB();
-    const deleted = await Event.findByIdAndDelete(id);
-
-    if (!deleted) {
-      return NextResponse.json(
-        { message: "Event not found.", code: "EVENT_NOT_FOUND" } satisfies ErrorResponse,
-        { status: 404 },
-      );
-    }
-
-    return NextResponse.json({ message: "Event deleted successfully" }, { status: 200 });
-  } catch (e) {
-    console.error(e);
-    return NextResponse.json(
-      { message: "Event deletion failed.", code: "INTERNAL_SERVER_ERROR" } satisfies ErrorResponse,
-      { status: 500 },
-    );
-  }
 }

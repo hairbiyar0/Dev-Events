@@ -1,112 +1,73 @@
-import { NextRequest, NextResponse } from "next/server";
-import { v2 as cloudinary } from 'cloudinary';
-import connectDB from "@/lib/mongodb";
-import Event from '@/database/models/event.model';
+import {NextRequest, NextResponse} from "next/server";
 
-// Cloudinary config
-cloudinary.config({
-    cloud_name: process.env.CLOUDINARY_CLOUD_NAME,
-    api_key: process.env.CLOUDINARY_API_KEY,
-    api_secret: process.env.CLOUDINARY_API_SECRET,
-});
+import connectDB from "@/lib/mongodb";
+import {Event} from "@/database";
+import cloudinary from "@/lib/cloudinary";
 
 export async function POST(req: NextRequest) {
     try {
-        // Connect to database first
         await connectDB();
-        
+
+        // Check Cloudinary configuration
+        if (!process.env.CLOUDINARY_CLOUD_NAME || !process.env.CLOUDINARY_API_KEY || !process.env.CLOUDINARY_API_SECRET) {
+            return NextResponse.json({ 
+                message: 'Cloudinary configuration missing. Please check environment variables.' 
+            }, { status: 500 });
+        }
+
         const formData = await req.formData();
 
         const file = formData.get('image') as File;
 
-        if (!file) return NextResponse.json(
-            { message: 'Image file is required' },
-            { status: 400 }
-        );
+        if(!file) return NextResponse.json({ message: 'Image file is required'}, { status: 400 })
+
+        // Extract tags and agenda from form data (they are sent as multiple entries)
+        const tags = formData.getAll('tags') as string[];
+        const agenda = formData.getAll('agenda') as string[];
+
+        // Remove tags, agenda, and image from the event data to avoid conflicts
+        const eventData = Object.fromEntries(formData.entries());
+        delete eventData.tags;
+        delete eventData.agenda;
+        delete eventData.image;
 
         const arrayBuffer = await file.arrayBuffer();
         const buffer = Buffer.from(arrayBuffer);
 
-        // Cloudinary upload fix
-        const uploadResult = await new Promise<{ secure_url: string }>((resolve, reject) => {
-            cloudinary.uploader.upload_stream(
-                { resource_type: 'image', folder: 'devEvent' },
-                (error, result) => {
-                    if (error) reject(error);
-                    else resolve(result as { secure_url: string });
+        const uploadResult = await new Promise((resolve, reject) => {
+            cloudinary.uploader.upload_stream({ resource_type: 'image', folder: 'DevEvent' }, (error, results) => {
+                if(error) {
+                    console.error('Cloudinary upload error:', error);
+                    return reject(error);
                 }
-            ).end(buffer);
+
+                resolve(results);
+            }).end(buffer);
         });
 
-        // FormData se baaki fields nikalo
-        const event: Record<string, unknown> = {};
-        formData.forEach((value, key) => {
-            if (key !== 'image') {
-                event[key] = value;
-            }
+        eventData.image = (uploadResult as { secure_url: string }).secure_url;
+
+        const createdEvent = await Event.create({
+            ...eventData,
+            tags: tags,
+            agenda: agenda,
         });
 
-        // Image URL add karo
-        event.image = uploadResult.secure_url;
-
-        // Normalize mode
-        if (event.mode && typeof event.mode === 'string') {
-            const modeValue = event.mode.toLowerCase();
-            if (modeValue.includes('hybrid')) {
-                event.mode = 'hybrid';
-            } else if (modeValue.includes('online')) {
-                event.mode = 'online';
-            } else if (modeValue.includes('offline')) {
-                event.mode = 'offline';
-            }
-        }
-
-        const CreatedEvent = await Event.create(event);
-
-        return NextResponse.json(
-            { message: "Event Created Successfully", event: CreatedEvent },
-            { status: 201 }
-        );
-
+        return NextResponse.json({ message: 'Event created successfully', event: createdEvent }, { status: 201 });
     } catch (e) {
         console.error(e);
-
-        return NextResponse.json(
-            {
-                message: 'Event creation failed',
-                error: e instanceof Error ? e.message : 'Unknown error'
-            },
-            { status: 500 }
-        );
+        return NextResponse.json({ message: 'Event Creation Failed', error: e instanceof Error ? e.message : 'Unknown'}, { status: 500 })
     }
 }
 
 export async function GET() {
     try {
-        // Connect to database
         await connectDB();
 
-        // Fetch events with lean() for better performance and to return plain objects
-        const events = await Event.find().sort({ createdAt: -1 }).lean().exec();
+        const events = await Event.find().sort({ createdAt: -1 });
 
-        // Ensure we always return an array
-        const eventsArray = Array.isArray(events) ? events : [];
-
-        return NextResponse.json({ 
-            message: 'Events fetched successfully', 
-            events: eventsArray 
-        }, { status: 200 });
+        return NextResponse.json({ message: 'Events fetched successfully', events }, { status: 200 });
     } catch (e) {
-        console.error('GET /api/events error:', e);
-        const errorMessage = e instanceof Error ? e.message : 'Unknown error';
-        const errorDetails = e instanceof Error && e.message.includes('MONGODB_URI') 
-            ? 'Database connection string not configured. Please set MONGODB_URI environment variable.'
-            : errorMessage;
-        
-        return NextResponse.json({ 
-            message: 'Event fetching failed', 
-            error: errorDetails,
-            events: [] // Always return empty array on error
-        }, { status: 500 });
+        return NextResponse.json({ message: 'Event fetching failed', error: e }, { status: 500 });
     }
 }

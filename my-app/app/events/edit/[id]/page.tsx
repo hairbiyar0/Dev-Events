@@ -41,7 +41,7 @@ const EditEventPage = ({ params }: PageProps) => {
   useEffect(() => {
     const fetchEvent = async () => {
       try {
-        const res = await fetch(`${BASE_URL}/api/events/id/${id}`);
+        const res = await fetch(`${BASE_URL}/api/events/${id}`);
         if (!res.ok) {
           showToast("Event not found.", "error");
           router.push("/events");

@@ -35,7 +35,7 @@ const EventDetails = async ({ params }: PageProps) => {
 
         {/* Tags */}
         <div className="flex flex-wrap gap-2">
-          {event.tags?.map((tag) => (
+          {event.tags?.map((tag: string) => (
             <span key={tag} className="pill">
               {tag}
             </span>
